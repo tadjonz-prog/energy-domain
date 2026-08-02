@@ -72,9 +72,18 @@ Current cadence: rigs 06:00 MT, permits 06:05 MT (`Persistent=true`, needs
   the vendor updates the library.
 - **Bare `NULL` in SQL crashes the driver's type parser** — columns with no ED
   source are emitted as blanks in Python rather than selected as `NULL AS x`.
-- The scripts use a host-agnostic `#!/usr/bin/env python3` shebang, but they
-  must run under **this project's venv** (they need `datastream-direct`, pandas,
-  etc.). Invoke via the venv explicitly — `./venv/bin/python rigs_ed.py` — or via
-  the deploy wrapper / systemd unit that does so. A bare `./rigs_ed.py` would use
-  system Python and fail on imports.
+- **Host-agnostic shebang.** `rigs_ed.py` / `permits_ed.py` use a shell/Python
+  re-exec polyglot as their first two lines:
+
+  ```
+  #!/bin/sh
+  ''''exec "$(dirname "$0")/venv/bin/python3" "$0" "$@" # '''
+  ```
+
+  `/bin/sh` runs line 2, which re-execs the script under the **venv sitting next
+  to it** (`$(dirname "$0")/venv/bin/python3`) — so `./rigs_ed.py` works on any
+  host regardless of the absolute path (spark `/home/tadjonz/...`, prod-2
+  `/root/...`). To Python that line is just a harmless string literal, so the
+  file is still valid Python. (`run.sh` / systemd units invoke the venv directly
+  and don't rely on this.)
 - `RIG_NUM` (rigs) is intentionally left blank pending a vendor rig-number field.
