@@ -1,4 +1,4 @@
-#!/home/tadjonz/energy-domain/venv/bin/python
+#!/usr/bin/env python3
 """
 Permits report — Energy Domain edition.
 
