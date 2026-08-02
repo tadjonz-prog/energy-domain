@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily Rigs report (Energy Domain) at 06:00 MT
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=Permits report (Energy Domain) - generate + email
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/tadjonz/energy-domain
+ExecStart=/home/tadjonz/energy-domain/venv/bin/python /home/tadjonz/energy-domain/permits_ed.py --email
