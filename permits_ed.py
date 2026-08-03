@@ -15,9 +15,10 @@ downstream (Zoho Reports) pipeline:
 
 ONLY the data-retrieval layer changed: Enverus API -> Energy Domain SQL.
 
-SCOPE: permits.py queried permits ApprovedDate in a rolling 35-42-day-ago window
-(a "6 weeks back" report). well_combined has 4.6M rows, so an unfiltered pull is
-impractical; we keep the original's window via WINDOW_START/END_DAYS_AGO below.
+SCOPE: rolling "last 6 weeks" window on permit_date (today back WINDOW_START_DAYS_AGO
+days). well_combined has 4.6M rows, so an unfiltered pull is impractical; the window
+is set via WINDOW_START/END_DAYS_AGO below. The email stats bin the approved dates
+into fixed 7-day (weekly) buckets across that window — 42 days / 7 = 6 buckets.
 
 Report column  <-  Energy Domain field  (per the operator-supplied permits SQL)
   DATE_PROD    <-  today (MM/DD/YYYY)      [SQL had NULL; original fills today]
@@ -47,10 +48,11 @@ from ed_client import get_connection
 
 DELIM = "|"
 
-# Rolling window matching permits.py (ApprovedDate 35-42 days ago). Change these
-# two numbers to widen/shift the window.
+# Rolling "last 6 weeks" window on permit_date. Change these two numbers to
+# widen/shift the window; the weekly stat buckets follow WINDOW_START_DAYS_AGO.
 WINDOW_START_DAYS_AGO = 42   # oldest permit_date included (exclusive lower bound)
-WINDOW_END_DAYS_AGO   = 35   # newest permit_date included (inclusive upper bound)
+WINDOW_END_DAYS_AGO   = 0    # newest permit_date included (inclusive; 0 = today)
+BUCKET_WEEK_DAYS      = 7     # width of each date-approved stat bucket (1 week)
 
 # 79-column header — identical to permits.py
 HEADERS = [
@@ -125,42 +127,55 @@ def _wellnum(name):
     return parts[-1] if parts else ""
 
 
-def _date_buckets(dates, n=5):
-    """Split the actual min-max approved-date range into up to n equal-width
-    buckets; return [(label, count), ...]. Labels show the date range and the
-    days-ago range (relative to today)."""
-    ds = sorted(d for d in dates if d)
-    if not ds:
-        return [("(no approved dates)", 0)]
+def _bucket_meta(window_days=WINDOW_START_DAYS_AGO, week=BUCKET_WEEK_DAYS):
+    """Weekly-bucket layout: (nbuckets, column_labels, span_notes). 42/7 = 6.
+    Buckets run most-recent-first: bucket 0 = [0, week) days ago."""
     today = datetime.date.today()
-    lo, hi = ds[0], ds[-1]
-    ndays = (hi - lo).days + 1
-    n = max(1, min(n, ndays))
-    edges = [(i * ndays) // n for i in range(n + 1)]   # day offsets from lo
-    counts = [0] * n
-    for d in ds:
-        off = (d - lo).days
-        i = 0
-        while i < n - 1 and off >= edges[i + 1]:
-            i += 1
-        counts[i] += 1
-    out = []
-    for i in range(n):
-        start = lo + datetime.timedelta(days=edges[i])
-        end = lo + datetime.timedelta(days=edges[i + 1] - 1)
-        label = f"{start:%m/%d}–{end:%m/%d} ({(today - end).days}–{(today - start).days}d ago)"
-        out.append((label, counts[i]))
-    return out
+    nbuckets = max(1, -(-window_days // week))          # ceil(window / week)
+    cols, spans = [], []
+    for i in range(nbuckets):
+        lo, hi = i * week, (i + 1) * week               # [lo, hi) days ago
+        cols.append(f"{lo}-{hi}d")
+        newest = today - datetime.timedelta(days=lo)
+        oldest = today - datetime.timedelta(days=hi - 1)
+        spans.append(f"{lo}-{hi}d ago = {oldest:%m/%d}–{newest:%m/%d}")
+    return nbuckets, cols, spans
 
 
-def _summary(total, state_counts, approved_dates):
-    """Plain-text stats for the email body / log: total, per-state, date buckets."""
-    lines = [f"Total Permits: {total}", "", "Permits by State:"]
-    for st, c in sorted(state_counts.items(), key=lambda kv: (-kv[1], kv[0])):
-        lines.append(f"  {st:<6} {c}")
-    lines += ["", "Permits by Date Approved (~5 buckets across the report's date range):"]
-    for label, c in _date_buckets(approved_dates, 5):
-        lines.append(f"  {label:<30} {c}")
+def _week_index(d, today, nbuckets, week=BUCKET_WEEK_DAYS):
+    """Weekly bucket index for an approved date (0 = most recent week)."""
+    i = (today - d).days // week
+    return 0 if i < 0 else (nbuckets - 1 if i >= nbuckets else i)
+
+
+def _summary(total, records):
+    """Plain-text stats: total + a per-state table whose columns are the state
+    total followed by the 6 weekly Date-Approved bucket counts.
+
+    records is a list of (state_abbr, approved_date_or_None) — one per report row.
+    """
+    today = datetime.date.today()
+    nbuckets, cols, spans = _bucket_meta()
+
+    per = {}                                             # state -> [total, w0, w1, ...]
+    for st, d in records:
+        row = per.setdefault(st, [0] * (nbuckets + 1))
+        row[0] += 1
+        if d:
+            row[1 + _week_index(d, today, nbuckets)] += 1
+
+    W = 8                                                # column width
+    header = f"  {'State':<8}{'Total':>{W}}  " + "  ".join(f"{c:>{W}}" for c in cols)
+    lines = [f"Total Permits: {total}", "",
+             "Permits by State — state total + weekly Date-Approved buckets (days ago):",
+             header]
+    grand = [0] * (nbuckets + 1)
+    for st, row in sorted(per.items(), key=lambda kv: (-kv[1][0], kv[0])):
+        lines.append(f"  {st:<8}{row[0]:>{W}}  " + "  ".join(f"{v:>{W}}" for v in row[1:]))
+        for j in range(nbuckets + 1):
+            grand[j] += row[j]
+    lines.append(f"  {'TOTAL':<8}{grand[0]:>{W}}  " + "  ".join(f"{v:>{W}}" for v in grand[1:]))
+    lines += ["", "Bucket spans:"] + [f"  {s}" for s in spans]
     return "\n".join(lines)
 
 
@@ -208,20 +223,20 @@ def build_report():
             f.write(DELIM.join(cols) + "\n")   # full 79-column width
             n += 1
 
-    # email-body stats: total + by-state + date-approved buckets
-    state_counts = {}
-    approved = []
+    # email-body stats: per-state table with weekly Date-Approved buckets
+    records = []
     for r in rows:
         st = _txt(r[idx["state_abbr"]]) or "(blank)"
-        state_counts[st] = state_counts.get(st, 0) + 1
         pd = r[idx["permit_date"]]
+        d = None
         if pd:
             try:
-                approved.append(datetime.date.fromisoformat(str(pd)[:10]))
+                d = datetime.date.fromisoformat(str(pd)[:10])
             except ValueError:
-                pass
+                d = None
+        records.append((st, d))
 
-    return out_path, n, _summary(n, state_counts, approved)
+    return out_path, n, _summary(n, records)
 
 
 def email_report(path, body=""):
@@ -261,7 +276,8 @@ def main():
     import sys
     out_path, n, summary = build_report()
     print(f"Wrote {n} rows -> {out_path}  ({out_path.stat().st_size:,} bytes)")
-    print(f"  window: permit_date {WINDOW_START_DAYS_AGO}-{WINDOW_END_DAYS_AGO} days ago")
+    print(f"  window: permit_date last {WINDOW_START_DAYS_AGO} days "
+          f"({WINDOW_START_DAYS_AGO}-{WINDOW_END_DAYS_AGO} days ago)")
     print(summary)
     if "--email" in sys.argv:
         email_report(out_path, summary)
