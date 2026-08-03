@@ -117,10 +117,14 @@ def _wellnum(name):
 
 
 def _summary(total, state_counts):
-    """Plain-text stats for the email body / log: total + per-state counts."""
-    lines = [f"Total Rigs: {total}", "", "Rigs by State:"]
+    """Plain-text stats for the email body / log: total + a vertical per-state
+    table (State / Count columns, sorted by count, with a TOTAL row)."""
+    W = 8
+    lines = [f"Total Rigs: {total}", "", "Rigs by State:",
+             f"  {'State':<8}{'Count':>{W}}"]
     for st, c in sorted(state_counts.items(), key=lambda kv: (-kv[1], kv[0])):
-        lines.append(f"  {st:<6} {c}")
+        lines.append(f"  {st:<8}{c:>{W}}")
+    lines.append(f"  {'TOTAL':<8}{total:>{W}}")
     return "\n".join(lines)
 
 
