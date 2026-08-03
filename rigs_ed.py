@@ -116,6 +116,14 @@ def _wellnum(name):
     return parts[-1] if parts else ""
 
 
+def _summary(total, state_counts):
+    """Plain-text stats for the email body / log: total + per-state counts."""
+    lines = [f"Total Rigs: {total}", "", "Rigs by State:"]
+    for st, c in sorted(state_counts.items(), key=lambda kv: (-kv[1], kv[0])):
+        lines.append(f"  {st:<6} {c}")
+    return "\n".join(lines)
+
+
 def build_report():
     OUT_DIR.mkdir(exist_ok=True)
     report_date = datetime.date.today()
@@ -164,13 +172,20 @@ def build_report():
             f.write(DELIM.join(cols) + "\n")  # full 52-column width
             n += 1
 
-    return out_path, n
+    # email-body stats: total + rigs-by-state
+    state_counts = {}
+    for r in rows:
+        st = _txt(r[idx["state_abbr"]]) or "(blank)"
+        state_counts[st] = state_counts.get(st, 0) + 1
+
+    return out_path, n, _summary(n, state_counts)
 
 
-def email_report(path):
+def email_report(path, body=""):
     """Opt-in email delivery (rigs.py port). Creds + recipients from .env."""
     import smtplib
     from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
     from email.mime.base import MIMEBase
     from email import encoders
 
@@ -185,6 +200,8 @@ def email_report(path):
     msg["From"] = sender
     msg["To"] = ", ".join(recips)
     msg["Subject"] = "Rigs Report - Energy Domain for " + dateprod
+    if body:
+        msg.attach(MIMEText(body + "\n", "plain"))
     with open(path, "rb") as fh:
         obj = MIMEBase("application", "octet-stream")
         obj.set_payload(fh.read())
@@ -201,10 +218,11 @@ def email_report(path):
 
 def main():
     import sys
-    out_path, n = build_report()
+    out_path, n, summary = build_report()
     print(f"Wrote {n} rows -> {out_path}  ({out_path.stat().st_size:,} bytes)")
+    print(summary)
     if "--email" in sys.argv:
-        email_report(out_path)
+        email_report(out_path, summary)
         print("Email sent.")
     else:
         print("(file only — run  ./rigs_ed.py --email  to also send it)")

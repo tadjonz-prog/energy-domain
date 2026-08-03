@@ -125,6 +125,45 @@ def _wellnum(name):
     return parts[-1] if parts else ""
 
 
+def _date_buckets(dates, n=5):
+    """Split the actual min-max approved-date range into up to n equal-width
+    buckets; return [(label, count), ...]. Labels show the date range and the
+    days-ago range (relative to today)."""
+    ds = sorted(d for d in dates if d)
+    if not ds:
+        return [("(no approved dates)", 0)]
+    today = datetime.date.today()
+    lo, hi = ds[0], ds[-1]
+    ndays = (hi - lo).days + 1
+    n = max(1, min(n, ndays))
+    edges = [(i * ndays) // n for i in range(n + 1)]   # day offsets from lo
+    counts = [0] * n
+    for d in ds:
+        off = (d - lo).days
+        i = 0
+        while i < n - 1 and off >= edges[i + 1]:
+            i += 1
+        counts[i] += 1
+    out = []
+    for i in range(n):
+        start = lo + datetime.timedelta(days=edges[i])
+        end = lo + datetime.timedelta(days=edges[i + 1] - 1)
+        label = f"{start:%m/%d}–{end:%m/%d} ({(today - end).days}–{(today - start).days}d ago)"
+        out.append((label, counts[i]))
+    return out
+
+
+def _summary(total, state_counts, approved_dates):
+    """Plain-text stats for the email body / log: total, per-state, date buckets."""
+    lines = [f"Total Permits: {total}", "", "Permits by State:"]
+    for st, c in sorted(state_counts.items(), key=lambda kv: (-kv[1], kv[0])):
+        lines.append(f"  {st:<6} {c}")
+    lines += ["", "Permits by Date Approved (~5 buckets across the report's date range):"]
+    for label, c in _date_buckets(approved_dates, 5):
+        lines.append(f"  {label:<30} {c}")
+    return "\n".join(lines)
+
+
 def build_report():
     OUT_DIR.mkdir(exist_ok=True)
     report_date = datetime.date.today()
@@ -169,13 +208,27 @@ def build_report():
             f.write(DELIM.join(cols) + "\n")   # full 79-column width
             n += 1
 
-    return out_path, n
+    # email-body stats: total + by-state + date-approved buckets
+    state_counts = {}
+    approved = []
+    for r in rows:
+        st = _txt(r[idx["state_abbr"]]) or "(blank)"
+        state_counts[st] = state_counts.get(st, 0) + 1
+        pd = r[idx["permit_date"]]
+        if pd:
+            try:
+                approved.append(datetime.date.fromisoformat(str(pd)[:10]))
+            except ValueError:
+                pass
+
+    return out_path, n, _summary(n, state_counts, approved)
 
 
-def email_report(path):
+def email_report(path, body=""):
     """Opt-in email delivery. Creds + recipients from .env."""
     import smtplib
     from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
     from email.mime.base import MIMEBase
     from email import encoders
 
@@ -190,6 +243,8 @@ def email_report(path):
     msg["From"] = sender
     msg["To"] = ", ".join(recips)
     msg["Subject"] = "Permits Report - Energy Domain for " + dateprod
+    if body:
+        msg.attach(MIMEText(body + "\n", "plain"))
     with open(path, "rb") as fh:
         obj = MIMEBase("application", "octet-stream")
         obj.set_payload(fh.read())
@@ -204,11 +259,12 @@ def email_report(path):
 
 def main():
     import sys
-    out_path, n = build_report()
+    out_path, n, summary = build_report()
     print(f"Wrote {n} rows -> {out_path}  ({out_path.stat().st_size:,} bytes)")
     print(f"  window: permit_date {WINDOW_START_DAYS_AGO}-{WINDOW_END_DAYS_AGO} days ago")
+    print(summary)
     if "--email" in sys.argv:
-        email_report(out_path)
+        email_report(out_path, summary)
         print("Email sent.")
     else:
         print("(file only — run  ./permits_ed.py --email  to also send it)")
