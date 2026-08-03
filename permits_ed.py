@@ -259,7 +259,17 @@ def email_report(path, body=""):
     msg["To"] = ", ".join(recips)
     msg["Subject"] = "Permits Report - Energy Domain for " + dateprod
     if body:
-        msg.attach(MIMEText(body + "\n", "plain"))
+        # Send the stats as BOTH plain text and an HTML <pre> block. Mail clients
+        # render text/plain in a proportional font (columns misalign); the <pre>
+        # HTML part forces monospace so the table lines up. multipart/alternative
+        # lets each client pick the richer part it supports.
+        import html as _html
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(body + "\n", "plain"))
+        alt.attach(MIMEText(
+            f'<pre style="font-family:\'Courier New\',Consolas,monospace;'
+            f'font-size:13px;margin:0">{_html.escape(body)}</pre>', "html"))
+        msg.attach(alt)
     with open(path, "rb") as fh:
         obj = MIMEBase("application", "octet-stream")
         obj.set_payload(fh.read())
