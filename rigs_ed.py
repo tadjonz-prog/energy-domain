@@ -116,6 +116,21 @@ def _wellnum(name):
     return parts[-1] if parts else ""
 
 
+def _source_tag():
+    """Which box this ran on, for the email subject: 'spark' or 'prod2'.
+    Honors REPORT_SOURCE in .env; otherwise derives from the hostname."""
+    tag = os.getenv("REPORT_SOURCE")
+    if tag:
+        return tag.strip()
+    import socket
+    h = socket.gethostname().lower()
+    if "prod2" in h:
+        return "prod2"
+    if "spark" in h:
+        return "spark"
+    return h
+
+
 def _summary(total, state_counts):
     """Plain-text stats for the email body / log: total + a vertical per-state
     table (State / Count columns, sorted by count, with a TOTAL row)."""
@@ -203,7 +218,7 @@ def email_report(path, body=""):
     msg = MIMEMultipart()
     msg["From"] = sender
     msg["To"] = ", ".join(recips)
-    msg["Subject"] = "Rigs Report - Energy Domain for " + dateprod
+    msg["Subject"] = "Rigs Report - Energy Domain for " + dateprod + f" -{_source_tag()}"
     if body:
         # Send the stats as BOTH plain text and an HTML <pre> block. Mail clients
         # render text/plain in a proportional font (columns misalign); the <pre>

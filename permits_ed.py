@@ -127,6 +127,21 @@ def _wellnum(name):
     return parts[-1] if parts else ""
 
 
+def _source_tag():
+    """Which box this ran on, for the email subject: 'spark' or 'prod2'.
+    Honors REPORT_SOURCE in .env; otherwise derives from the hostname."""
+    tag = os.getenv("REPORT_SOURCE")
+    if tag:
+        return tag.strip()
+    import socket
+    h = socket.gethostname().lower()
+    if "prod2" in h:
+        return "prod2"
+    if "spark" in h:
+        return "spark"
+    return h
+
+
 def _bucket_meta(window_days=WINDOW_START_DAYS_AGO, week=BUCKET_WEEK_DAYS):
     """Weekly-bucket layout: (nbuckets, column_labels, span_notes). 42/7 = 6.
     Buckets run most-recent-first: bucket 0 = [0, week) days ago."""
@@ -257,7 +272,7 @@ def email_report(path, body=""):
     msg = MIMEMultipart()
     msg["From"] = sender
     msg["To"] = ", ".join(recips)
-    msg["Subject"] = "Permits Report - Energy Domain for " + dateprod
+    msg["Subject"] = "Permits Report - Energy Domain for " + dateprod + f" -{_source_tag()}"
     if body:
         # Send the stats as BOTH plain text and an HTML <pre> block. Mail clients
         # render text/plain in a proportional font (columns misalign); the <pre>
