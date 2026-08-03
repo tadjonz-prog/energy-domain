@@ -209,7 +209,7 @@ def build_report():
         conn.close()
 
     n = 0
-    with open(out_path, "w") as f:
+    with open(out_path, "w", newline="\n") as f:  # LF on every OS (Windows-safe)
         f.write(DELIM.join(HEADERS) + "\n")
         for r in rows:
             def g(col):
