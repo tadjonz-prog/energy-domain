@@ -100,7 +100,39 @@ def mark_succeeded() -> None:
     path.write_text(_period_id())
 
 
+# --------------------------------------------------------------------------
+# Report date (DATE_PROD / filename) — optionally pinned to a weekday
+#
+# Default: today (the run date). But a WEEKLY report whose retry may not land
+# until Saturday must still stamp the FRIDAY it belongs to, or Zoho's
+# Friday-ending weekly pivots break. Set REPORT_DATE_ANCHOR to a weekday name
+# (e.g. "friday") and the report date snaps back to the most recent occurrence
+# of that weekday on-or-before today:
+#     Fri run   -> that Friday
+#     Sat retry -> the day before (that same Friday)
+#     Sun retry -> still that Friday
+# Leave REPORT_DATE_ANCHOR unset for daily runs (stamps today, as before).
+# --------------------------------------------------------------------------
+_WEEKDAYS = {
+    "monday": 0, "mon": 0, "tuesday": 1, "tue": 1, "wednesday": 2, "wed": 2,
+    "thursday": 3, "thu": 3, "friday": 4, "fri": 4, "saturday": 5, "sat": 5,
+    "sunday": 6, "sun": 6,
+}
+
+
+def resolve_report_date():
+    """Date to stamp as DATE_PROD and use in the filename (see note above)."""
+    today = datetime.date.today()
+    anchor = os.getenv("REPORT_DATE_ANCHOR")
+    if anchor:
+        target = _WEEKDAYS.get(anchor.strip().lower())
+        if target is not None:
+            days_back = (today.weekday() - target) % 7
+            return today - datetime.timedelta(days=days_back)
+    return today
+
+
 __all__ = [
     "get_connection", "connect", "fetch_frame",
-    "already_succeeded", "mark_succeeded",
+    "already_succeeded", "mark_succeeded", "resolve_report_date",
 ]

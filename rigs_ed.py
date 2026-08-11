@@ -43,7 +43,9 @@ import os
 import datetime
 from pathlib import Path
 
-from ed_client import get_connection, already_succeeded, mark_succeeded
+from ed_client import (
+    get_connection, already_succeeded, mark_succeeded, resolve_report_date,
+)
 
 DELIM = "|"
 
@@ -145,7 +147,7 @@ def _summary(total, state_counts):
 
 def build_report():
     OUT_DIR.mkdir(exist_ok=True)
-    report_date = datetime.date.today()
+    report_date = resolve_report_date()   # today, or pinned weekday (REPORT_DATE_ANCHOR)
     dateprod = report_date.strftime("%m/%d/%Y")
     out_path = OUT_DIR / f"Rigs_ED_{report_date.strftime('%m-%d-%Y')}.txt"
 

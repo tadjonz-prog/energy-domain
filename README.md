@@ -79,6 +79,14 @@ Opt in with two environment variables on the cron/task line:
 |---|---|
 | `RUN_ONCE_KEY` | state-file name (e.g. `rigs_daily`); omit to disable the guard |
 | `RUN_ONCE_PERIOD` | `day` (default) or `week` — what "already done" resets on |
+| `REPORT_DATE_ANCHOR` | weekday name (e.g. `friday`) to pin `DATE_PROD` — see below |
+
+**Pinning `DATE_PROD` for weekly reports.** `DATE_PROD` (and the filename)
+default to the run date. But a weekly report whose Friday run only succeeds on a
+Saturday retry must still be stamped **Friday**, or Zoho's Friday-ending weekly
+pivots break. Set `REPORT_DATE_ANCHOR=friday` and the report date snaps to the
+most recent Friday on-or-before the run date (Fri run → that Friday; Sat/Sun
+retry → still that Friday). Omit it for daily runs (stamps today).
 
 On success the script writes `data/state/<key>.txt` with the current period id;
 subsequent hourly runs in the same period exit immediately as a no-op. If the
@@ -94,6 +102,20 @@ Example prod-2 crontab (daily rigs, retry hourly 06:00–22:00 MT until it sends
   /root/energy-domain/run.sh rigs_ed.py --email \
   >> /root/energy-domain/cron_rigs_daily.log 2>&1
 ```
+
+Weekly rigs+permits (Fri 6 PM, retry hourly through Sat/Sun, `DATE_PROD` pinned
+to Friday, sent once thanks to the `week` guard):
+
+```cron
+# Friday evening + all Saturday + Sunday morning — guard sends only the first success
+0 18-23 * * 5 RUN_ONCE_KEY=rigs_weekly RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh rigs_ed.py    --email >> /root/energy-domain/cron_rigs.log 2>&1
+0 0-23  * * 6 RUN_ONCE_KEY=rigs_weekly RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh rigs_ed.py    --email >> /root/energy-domain/cron_rigs.log 2>&1
+0 18-23 * * 5 RUN_ONCE_KEY=permits_weekly RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh permits_ed.py --email >> /root/energy-domain/cron_permits.log 2>&1
+0 0-23  * * 6 RUN_ONCE_KEY=permits_weekly RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh permits_ed.py --email >> /root/energy-domain/cron_permits.log 2>&1
+```
+
+(Sat/Sun are the same ISO week as Fri, so the `week` guard treats them as one
+period — keep the retry window inside Fri–Sun so guard and anchor stay aligned.)
 
 ## Notes
 
