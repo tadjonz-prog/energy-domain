@@ -1,8 +1,10 @@
 [Unit]
-Description=Daily Rigs report (Energy Domain) at 06:00 MT
+Description=Rigs report (Energy Domain) - hourly 06:00-22:00 MT, once/day via guard
 
 [Timer]
-OnCalendar=*-*-* 06:00:00
+# Fire hourly 06:00-22:00; the RUN_ONCE guard in the service sends only the
+# first success each day and no-ops the rest (rides out transient vendor 503s).
+OnCalendar=*-*-* 06..22:00:00
 Persistent=true
 
 [Install]

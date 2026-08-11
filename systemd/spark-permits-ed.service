@@ -6,4 +6,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/home/tadjonz/energy-domain
+# Retry-until-success guard: the timer fires hourly; once a run succeeds this
+# guard makes the rest of the day's firings no-op. See ed_client.py.
+Environment=RUN_ONCE_KEY=permits_daily
+Environment=RUN_ONCE_PERIOD=day
 ExecStart=/home/tadjonz/energy-domain/venv/bin/python /home/tadjonz/energy-domain/permits_ed.py --email
