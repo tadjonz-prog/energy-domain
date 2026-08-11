@@ -77,7 +77,15 @@ assert len(HEADERS) == 79, len(HEADERS)
 
 # Real columns only (bare NULL literals crash the driver's type parser, so the
 # SQL's NULL-mapped columns are simply emitted blank in Python instead).
-QUERY = f"""
+def _build_query(report_date):
+    """Permits query with the 42-day window anchored on report_date instead of
+    the server's CURRENT_DATE. For a weekly run this is the pinned Friday, so a
+    Saturday retry still pulls the SAME [Friday-42 .. Friday] window (keeping
+    Zoho's Friday-ending pivots stable); for daily runs report_date is today,
+    identical to the old CURRENT_DATE behaviour. The date is our own ISO string,
+    injected as a Trino DATE literal (no user input, no injection risk)."""
+    ref = report_date.isoformat()
+    return f"""
 SELECT
     state_abbr,
     rrc_district_number,
@@ -94,8 +102,8 @@ SELECT
     latitude,
     operator_name
 FROM well_combined
-WHERE permit_date >  CURRENT_DATE - INTERVAL '{WINDOW_START_DAYS_AGO}' DAY
-  AND permit_date <= CURRENT_DATE - INTERVAL '{WINDOW_END_DAYS_AGO}' DAY
+WHERE permit_date >  DATE '{ref}' - INTERVAL '{WINDOW_START_DAYS_AGO}' DAY
+  AND permit_date <= DATE '{ref}' - INTERVAL '{WINDOW_END_DAYS_AGO}' DAY
 """
 
 OUT_DIR = Path(__file__).with_name("data")
@@ -144,42 +152,44 @@ def _source_tag():
     return h
 
 
-def _bucket_meta(window_days=WINDOW_START_DAYS_AGO, week=BUCKET_WEEK_DAYS):
+def _bucket_meta(as_of, window_days=WINDOW_START_DAYS_AGO, week=BUCKET_WEEK_DAYS):
     """Weekly-bucket layout: (nbuckets, column_labels, span_notes). 42/7 = 6.
-    Buckets run most-recent-first: bucket 0 = [0, week) days ago."""
-    today = datetime.date.today()
+    Buckets run most-recent-first: bucket 0 = [0, week) days ago, measured from
+    `as_of` (the report date — the pinned Friday for weekly runs), so the labels
+    match the data window rather than the actual run day."""
     nbuckets = max(1, -(-window_days // week))          # ceil(window / week)
     cols, spans = [], []
     for i in range(nbuckets):
         lo, hi = i * week, (i + 1) * week               # [lo, hi) days ago
         cols.append(f"{lo}-{hi}d")
-        newest = today - datetime.timedelta(days=lo)
-        oldest = today - datetime.timedelta(days=hi - 1)
+        newest = as_of - datetime.timedelta(days=lo)
+        oldest = as_of - datetime.timedelta(days=hi - 1)
         spans.append(f"{lo}-{hi}d ago = {oldest:%m/%d}–{newest:%m/%d}")
     return nbuckets, cols, spans
 
 
-def _week_index(d, today, nbuckets, week=BUCKET_WEEK_DAYS):
-    """Weekly bucket index for an approved date (0 = most recent week)."""
-    i = (today - d).days // week
+def _week_index(d, as_of, nbuckets, week=BUCKET_WEEK_DAYS):
+    """Weekly bucket index for an approved date (0 = most recent week), relative
+    to `as_of` (the report date)."""
+    i = (as_of - d).days // week
     return 0 if i < 0 else (nbuckets - 1 if i >= nbuckets else i)
 
 
-def _summary(total, records):
+def _summary(total, records, as_of):
     """Plain-text stats: total + a per-state table whose columns are the state
     total followed by the 6 weekly Date-Approved bucket counts.
 
     records is a list of (state_abbr, approved_date_or_None) — one per report row.
+    Buckets are measured from `as_of` (the report date / pinned Friday).
     """
-    today = datetime.date.today()
-    nbuckets, cols, spans = _bucket_meta()
+    nbuckets, cols, spans = _bucket_meta(as_of)
 
     per = {}                                             # state -> [total, w0, w1, ...]
     for st, d in records:
         row = per.setdefault(st, [0] * (nbuckets + 1))
         row[0] += 1
         if d:
-            row[1 + _week_index(d, today, nbuckets)] += 1
+            row[1 + _week_index(d, as_of, nbuckets)] += 1
 
     W = 8                                                # column width
     header = f"  {'State':<8}{'Total':>{W}}  " + "  ".join(f"{c:>{W}}" for c in cols)
@@ -204,7 +214,7 @@ def build_report():
 
     conn = get_connection(); cur = conn.cursor()
     try:
-        cur.execute(QUERY); cur.fetchall()
+        cur.execute(_build_query(report_date)); cur.fetchall()
         rows = list(cur.rows)
         idx = {name: i for i, name in enumerate(cur.headers)}
     finally:
@@ -253,7 +263,7 @@ def build_report():
                 d = None
         records.append((st, d))
 
-    return out_path, n, _summary(n, records)
+    return out_path, n, _summary(n, records, report_date)
 
 
 def email_report(path, body=""):
