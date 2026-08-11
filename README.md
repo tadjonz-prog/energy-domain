@@ -65,6 +65,36 @@ systemctl --user enable --now spark-rigs-ed.timer spark-permits-ed.timer
 Current cadence: rigs 06:00 MT, permits 06:05 MT (`Persistent=true`, needs
 `loginctl enable-linger`).
 
+## Retry-until-success scheduling
+
+The Energy Domain API occasionally returns transient `503`s (server busy /
+maintenance); a single scheduled run that lands during one fails with
+`too many 503 error responses`. To survive that, run the job **hourly** and let
+the code skip once it has already succeeded, so a failed 06:00 run just retries
+at 07:00… until one goes through.
+
+Opt in with two environment variables on the cron/task line:
+
+| Variable | Meaning |
+|---|---|
+| `RUN_ONCE_KEY` | state-file name (e.g. `rigs_daily`); omit to disable the guard |
+| `RUN_ONCE_PERIOD` | `day` (default) or `week` — what "already done" resets on |
+
+On success the script writes `data/state/<key>.txt` with the current period id;
+subsequent hourly runs in the same period exit immediately as a no-op. If the
+run fails (vendor 503, email error), nothing is written, so the next hour tries
+again. State is per-box (`data/` is gitignored); with `RUN_ONCE_KEY` unset the
+scripts always run, so manual runs and single-shot schedules are unchanged.
+
+Example prod-2 crontab (daily rigs, retry hourly 06:00–22:00 MT until it sends):
+
+```cron
+0 6-22 * * * RIGS_EMAIL_TO=tad.jones@columbineco.com \
+  RUN_ONCE_KEY=rigs_daily RUN_ONCE_PERIOD=day \
+  /root/energy-domain/run.sh rigs_ed.py --email \
+  >> /root/energy-domain/cron_rigs_daily.log 2>&1
+```
+
 ## Notes
 
 - **`pandas` is pinned `<3`**: `datastream-direct` 0.1.4's `fetch_frame` predates

@@ -43,7 +43,7 @@ import os
 import datetime
 from pathlib import Path
 
-from ed_client import get_connection
+from ed_client import get_connection, already_succeeded, mark_succeeded
 
 DELIM = "|"
 
@@ -247,6 +247,10 @@ def email_report(path, body=""):
 
 def main():
     import sys
+    if already_succeeded():
+        print(f"[{os.getenv('RUN_ONCE_KEY')}] already succeeded this period "
+              f"— skipping (nothing to do).")
+        return
     out_path, n, summary = build_report()
     print(f"Wrote {n} rows -> {out_path}  ({out_path.stat().st_size:,} bytes)")
     print(summary)
@@ -255,6 +259,7 @@ def main():
         print("Email sent.")
     else:
         print("(file only — run  ./rigs_ed.py --email  to also send it)")
+    mark_succeeded()  # only reached if the run (incl. email) fully succeeded
 
 
 if __name__ == "__main__":

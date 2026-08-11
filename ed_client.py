@@ -14,6 +14,7 @@ requirements.txt (pandas pinned) — do not bump pandas to 3.x here until the
 vendor updates datastream_direct.
 """
 import os
+import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -43,4 +44,63 @@ def get_connection():
     )
 
 
-__all__ = ["get_connection", "connect", "fetch_frame"]
+# --------------------------------------------------------------------------
+# "Retry hourly until success" guard
+#
+# For unattended scheduling: run the job EVERY HOUR, but make each run a no-op
+# once it has already succeeded for the current period. So a transient vendor
+# outage (e.g. a 503 at 06:00) just means 07:00 tries again... until one run
+# succeeds and stamps "done", after which the rest of that period's hourly
+# firings exit instantly. Reboot-safe (state is a file), no long-sleeping
+# process, no overlap.
+#
+# Opt in per schedule via environment variables on the cron/task line:
+#   RUN_ONCE_KEY=rigs_daily     # state file name; distinguishes daily vs weekly
+#   RUN_ONCE_PERIOD=day|week    # what "already done" means (default: day)
+# If RUN_ONCE_KEY is unset the guard is disabled and the script always runs
+# (so plain manual runs and the existing weekly single-shot lines are unchanged).
+#
+# State lives in data/state/<key>.txt (data/ is gitignored -> per-box, not shared).
+# --------------------------------------------------------------------------
+_STATE_DIR = Path(__file__).with_name("data") / "state"
+
+
+def _period_id() -> str:
+    """Identifier for the current period, per RUN_ONCE_PERIOD."""
+    today = datetime.date.today()
+    if os.getenv("RUN_ONCE_PERIOD", "day").lower() == "week":
+        y, w, _ = today.isocalendar()
+        return f"{y}-W{w:02d}"
+    return today.isoformat()
+
+
+def _guard_path():
+    """State file for the active RUN_ONCE_KEY, or None if guarding is disabled."""
+    key = os.getenv("RUN_ONCE_KEY")
+    return (_STATE_DIR / f"{key}.txt") if key else None
+
+
+def already_succeeded() -> bool:
+    """True if this key has already succeeded for the current period."""
+    path = _guard_path()
+    if path is None:
+        return False
+    try:
+        return path.read_text().strip() == _period_id()
+    except FileNotFoundError:
+        return False
+
+
+def mark_succeeded() -> None:
+    """Record a successful run for the current period (no-op if guard disabled)."""
+    path = _guard_path()
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_period_id())
+
+
+__all__ = [
+    "get_connection", "connect", "fetch_frame",
+    "already_succeeded", "mark_succeeded",
+]
