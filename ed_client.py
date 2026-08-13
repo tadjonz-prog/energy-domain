@@ -88,6 +88,21 @@ def mark_succeeded(key, period="day") -> None:
     (_STATE_DIR / f"{key}.txt").write_text(_period_id(period))
 
 
+def once_period_warning(key, period):
+    """Seatbelt for the orthogonal --once/--period flags: the key is a free-form
+    label, so a name like 'rigs_daily' paired with '--period week' is legal but
+    almost certainly a typo. Return a warning string on a name/period mismatch
+    (by the _daily/_weekly naming convention), else None. Does not block the run."""
+    if not key:
+        return None
+    k = key.lower()
+    if k.endswith("_daily") and period != "day":
+        return f"--once {key} (name says daily) but --period {period} — mismatch?"
+    if (k.endswith("_weekly") or k.endswith("_week")) and period != "week":
+        return f"--once {key} (name says weekly) but --period {period} — mismatch?"
+    return None
+
+
 # --------------------------------------------------------------------------
 # Report date (DATE_PROD / filename) — optionally pinned to a weekday
 #
@@ -228,4 +243,5 @@ __all__ = [
     "get_connection", "connect", "fetch_frame",
     "already_succeeded", "mark_succeeded", "resolve_report_date",
     "report_source", "run_period_id", "log_run", "log_error", "parse_run_args",
+    "once_period_warning",
 ]

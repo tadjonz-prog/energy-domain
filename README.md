@@ -88,6 +88,11 @@ Scheduler — no per-platform inline env-var syntax):
 `RUN_ONCE_PERIOD`, `REPORT_DATE_ANCHOR`, `RIGS_EMAIL_TO` — when absent, so older
 env-var-based schedules keep working during the transition.)*
 
+`--once <key>` and `--period` are independent — the key is a free-form label, so
+`--once rigs_daily --period week` is legal but almost certainly a typo. As a
+seatbelt, the runners emit a non-blocking `WARN` line (to stderr and the log) if
+a key ending `_daily`/`_weekly` disagrees with `--period`.
+
 **Pinning `DATE_PROD` for weekly reports.** `DATE_PROD` (and the filename)
 default to the run date. But a weekly report whose Friday run only succeeds on a
 Saturday retry must still be stamped **Friday**, or Zoho's Friday-ending weekly

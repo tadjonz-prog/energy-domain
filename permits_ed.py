@@ -47,6 +47,7 @@ from pathlib import Path
 from ed_client import (
     get_connection, already_succeeded, mark_succeeded, resolve_report_date,
     report_source, run_period_id, log_run, log_error, parse_run_args,
+    once_period_warning,
 )
 
 DELIM = "|"
@@ -299,8 +300,12 @@ def email_report(path, body="", to=None, report_date=None):
 
 
 def main():
-    import time
+    import sys, time
     args = parse_run_args()
+    warn = once_period_warning(args.once, args.period)
+    if warn:
+        print(f"WARN: {warn}", file=sys.stderr)
+        log_run("permits", "WARN", warn)
     if already_succeeded(args.once, args.period):
         print(f"[{args.once}] already succeeded this period — skipping (nothing to do).")
         log_run("permits", "SKIP", f"already succeeded {run_period_id(args.period)}")
