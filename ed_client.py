@@ -132,7 +132,65 @@ def resolve_report_date():
     return today
 
 
+# --------------------------------------------------------------------------
+# Cross-platform run logging
+#
+# Each run appends ONE structured line to data/logs/<report>.log — identical on
+# every box regardless of launcher (cron / systemd / Task Scheduler / manual).
+# Timestamps are stamped in America/Denver via zoneinfo so the abbreviation is a
+# consistent MDT/MST on Linux AND Windows (a bare %Z renders the long
+# "Mountain Daylight Time" on Windows but "MDT" on Linux — this avoids that).
+# Line format:
+#   YYYY-MM-DD HH:MM:SS MDT | <source> | <report> | <OK|SKIP|FAIL> | <detail> | <dur>
+# data/ is gitignored -> logs are per-box, never committed.
+# --------------------------------------------------------------------------
+_LOG_DIR = Path(__file__).with_name("data") / "logs"
+
+
+def report_source() -> str:
+    """Which box this ran on ('spark' / 'prod2' / 'winpc' ...), for logs and the
+    email subject. Honors REPORT_SOURCE in .env; else derives from the hostname."""
+    tag = os.getenv("REPORT_SOURCE")
+    if tag:
+        return tag.strip()
+    import socket
+    h = socket.gethostname().lower()
+    if "prod2" in h:
+        return "prod2"
+    if "spark" in h:
+        return "spark"
+    return h
+
+
+def run_period_id() -> str:
+    """Public accessor for the current guard period id (used in SKIP log lines)."""
+    return _period_id()
+
+
+def _log_timestamp() -> str:
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.datetime.now(ZoneInfo("America/Denver"))
+    except Exception:
+        now = datetime.datetime.now().astimezone()
+    return now.strftime("%Y-%m-%d %H:%M:%S %Z")
+
+
+def log_run(report: str, outcome: str, detail: str = "", seconds=None) -> None:
+    """Append one outcome line to data/logs/<report>.log. Never raises."""
+    dur = f"{seconds:.1f}s" if seconds is not None else "-"
+    line = (f"{_log_timestamp()} | {report_source():<6} | {report:<7} | "
+            f"{outcome:<4} | {detail} | {dur}\n")
+    try:
+        _LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(_LOG_DIR / f"{report}.log", "a", newline="\n") as f:
+            f.write(line)
+    except OSError:
+        pass  # logging must never crash a run
+
+
 __all__ = [
     "get_connection", "connect", "fetch_frame",
     "already_succeeded", "mark_succeeded", "resolve_report_date",
+    "report_source", "run_period_id", "log_run",
 ]

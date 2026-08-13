@@ -117,6 +117,31 @@ to Friday, sent once thanks to the `week` guard):
 (Sat/Sun are the same ISO week as Fri, so the `week` guard treats them as one
 period — keep the retry window inside Fri–Sun so guard and anchor stay aligned.)
 
+## Run logging
+
+Every run appends one structured line to `data/logs/rigs.log` or
+`data/logs/permits.log` — the same format on every box regardless of launcher
+(cron / systemd / Task Scheduler / manual), so outcomes are consistent and
+greppable across spark, prod2, and winpc:
+
+```
+YYYY-MM-DD HH:MM:SS MDT | <source> | <report> | OK|SKIP|FAIL | <detail> | <dur>
+2026-08-14 18:00:04 MDT | prod2  | rigs    | OK   | rows=581 date_prod=08/14/2026 email=sent | 3.4s
+2026-08-14 18:00:12 MDT | prod2  | permits | FAIL | QueryError: too many 503 error responses | 61.8s
+2026-08-15 00:00:01 MDT | prod2  | rigs    | SKIP | already succeeded 2026-W33 | 0.1s
+```
+
+- **Timestamps** are stamped in `America/Denver` via `zoneinfo`, so the
+  abbreviation is a consistent `MDT`/`MST` on Linux *and* Windows (a bare `%Z`
+  renders the long "Mountain Daylight Time" on Windows).
+- `OK` = report generated (+ emailed if `--email`); `SKIP` = retry-guard no-op;
+  `FAIL` = exception (still exits non-zero so the retry guard / Task Scheduler
+  restart keep working). A `FAIL` line never gets a `mark_succeeded`, so the run
+  retries next hour.
+- `data/` is gitignored, so logs stay per-box. They grow a few lines/day — no
+  rotation needed. This is separate from and additive to prod2's verbose
+  `cron_*.log` files (which stay as-is).
+
 ## Notes
 
 - **`pandas` is pinned `<3`**: `datastream-direct` 0.1.4's `fetch_frame` predates

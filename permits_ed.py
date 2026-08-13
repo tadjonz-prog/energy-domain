@@ -46,6 +46,7 @@ from pathlib import Path
 
 from ed_client import (
     get_connection, already_succeeded, mark_succeeded, resolve_report_date,
+    report_source, run_period_id, log_run,
 )
 
 DELIM = "|"
@@ -135,21 +136,6 @@ def _wellnum(name):
         return ""
     parts = str(name).split()
     return parts[-1] if parts else ""
-
-
-def _source_tag():
-    """Which box this ran on, for the email subject: 'spark' or 'prod2'.
-    Honors REPORT_SOURCE in .env; otherwise derives from the hostname."""
-    tag = os.getenv("REPORT_SOURCE")
-    if tag:
-        return tag.strip()
-    import socket
-    h = socket.gethostname().lower()
-    if "prod2" in h:
-        return "prod2"
-    if "spark" in h:
-        return "spark"
-    return h
 
 
 def _bucket_meta(as_of, window_days=WINDOW_START_DAYS_AGO, week=BUCKET_WEEK_DAYS):
@@ -284,7 +270,7 @@ def email_report(path, body=""):
     msg = MIMEMultipart()
     msg["From"] = sender
     msg["To"] = ", ".join(recips)
-    msg["Subject"] = "Permits Report - Energy Domain for " + dateprod + f" -{_source_tag()}"
+    msg["Subject"] = "Permits Report - Energy Domain for " + dateprod + f" -{report_source()}"
     if body:
         # Send the stats as BOTH plain text and an HTML <pre> block. Mail clients
         # render text/plain in a proportional font (columns misalign); the <pre>
@@ -310,22 +296,32 @@ def email_report(path, body=""):
 
 
 def main():
-    import sys
+    import sys, time
     if already_succeeded():
         print(f"[{os.getenv('RUN_ONCE_KEY')}] already succeeded this period "
               f"— skipping (nothing to do).")
+        log_run("permits", "SKIP", f"already succeeded {run_period_id()}")
         return
-    out_path, n, summary = build_report()
-    print(f"Wrote {n} rows -> {out_path}  ({out_path.stat().st_size:,} bytes)")
-    print(f"  window: permit_date last {WINDOW_START_DAYS_AGO} days "
-          f"({WINDOW_START_DAYS_AGO}-{WINDOW_END_DAYS_AGO} days ago)")
-    print(summary)
-    if "--email" in sys.argv:
-        email_report(out_path, summary)
-        print("Email sent.")
-    else:
-        print("(file only — run  ./permits_ed.py --email  to also send it)")
-    mark_succeeded()  # only reached if the run (incl. email) fully succeeded
+    t0 = time.monotonic()
+    try:
+        out_path, n, summary = build_report()
+        print(f"Wrote {n} rows -> {out_path}  ({out_path.stat().st_size:,} bytes)")
+        print(f"  window: permit_date last {WINDOW_START_DAYS_AGO} days "
+              f"({WINDOW_START_DAYS_AGO}-{WINDOW_END_DAYS_AGO} days ago)")
+        print(summary)
+        emailed = "--email" in sys.argv
+        if emailed:
+            email_report(out_path, summary)
+            print("Email sent.")
+        else:
+            print("(file only — run  ./permits_ed.py --email  to also send it)")
+        mark_succeeded()  # only reached if the run (incl. email) fully succeeded
+    except Exception as e:
+        log_run("permits", "FAIL", f"{type(e).__name__}: {e}", time.monotonic() - t0)
+        raise
+    log_run("permits", "OK",
+            f"rows={n} date_prod={resolve_report_date():%m/%d/%Y} "
+            f"email={'sent' if emailed else 'no'}", time.monotonic() - t0)
 
 
 if __name__ == "__main__":
