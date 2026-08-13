@@ -46,7 +46,7 @@ from pathlib import Path
 
 from ed_client import (
     get_connection, already_succeeded, mark_succeeded, resolve_report_date,
-    report_source, run_period_id, log_run,
+    report_source, run_period_id, log_run, log_error,
 )
 
 DELIM = "|"
@@ -318,6 +318,7 @@ def main():
         mark_succeeded()  # only reached if the run (incl. email) fully succeeded
     except Exception as e:
         log_run("permits", "FAIL", f"{type(e).__name__}: {e}", time.monotonic() - t0)
+        log_error("permits")   # full traceback -> data/logs/permits.errors.log
         raise
     log_run("permits", "OK",
             f"rows={n} date_prod={resolve_report_date():%m/%d/%Y} "

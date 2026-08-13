@@ -189,8 +189,24 @@ def log_run(report: str, outcome: str, detail: str = "", seconds=None) -> None:
         pass  # logging must never crash a run
 
 
+def log_error(report: str) -> None:
+    """Append the current exception's FULL traceback to data/logs/<report>.errors.log.
+    Call from inside an `except` block. Keeps the concise FAIL line in the main
+    <report>.log scannable while preserving the stack trace on every platform
+    (Task Scheduler discards stderr, so winpc would otherwise lose it). Never raises."""
+    import traceback
+    block = (f"\n===== {_log_timestamp()} | {report_source()} | {report} | FAIL =====\n"
+             f"{traceback.format_exc()}")
+    try:
+        _LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(_LOG_DIR / f"{report}.errors.log", "a", newline="\n") as f:
+            f.write(block)
+    except OSError:
+        pass  # logging must never crash a run
+
+
 __all__ = [
     "get_connection", "connect", "fetch_frame",
     "already_succeeded", "mark_succeeded", "resolve_report_date",
-    "report_source", "run_period_id", "log_run",
+    "report_source", "run_period_id", "log_run", "log_error",
 ]

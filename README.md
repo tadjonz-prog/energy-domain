@@ -138,6 +138,10 @@ YYYY-MM-DD HH:MM:SS MDT | <source> | <report> | OK|SKIP|FAIL | <detail> | <dur>
   `FAIL` = exception (still exits non-zero so the retry guard / Task Scheduler
   restart keep working). A `FAIL` line never gets a `mark_succeeded`, so the run
   retries next hour.
+- On `FAIL` the concise one-liner stays in `<report>.log`, and the **full
+  traceback** is appended to `data/logs/<report>.errors.log` — so the stack
+  trace is preserved on every box, including winpc where Task Scheduler
+  otherwise discards stderr.
 - `data/` is gitignored, so logs stay per-box. They grow a few lines/day — no
   rotation needed. This is separate from and additive to prod2's verbose
   `cron_*.log` files (which stay as-is).
