@@ -54,50 +54,38 @@ def get_connection():
 # firings exit instantly. Reboot-safe (state is a file), no long-sleeping
 # process, no overlap.
 #
-# Opt in per schedule via environment variables on the cron/task line:
-#   RUN_ONCE_KEY=rigs_daily     # state file name; distinguishes daily vs weekly
-#   RUN_ONCE_PERIOD=day|week    # what "already done" means (default: day)
-# If RUN_ONCE_KEY is unset the guard is disabled and the script always runs
-# (so plain manual runs and the existing weekly single-shot lines are unchanged).
-#
-# State lives in data/state/<key>.txt (data/ is gitignored -> per-box, not shared).
+# Driven by CLI flags (see parse_run_args): --once <key> --period day|week.
+# key=None disables the guard (the script always runs), so plain manual runs
+# are unchanged. State lives in data/state/<key>.txt (gitignored -> per-box).
 # --------------------------------------------------------------------------
 _STATE_DIR = Path(__file__).with_name("data") / "state"
 
 
-def _period_id() -> str:
-    """Identifier for the current period, per RUN_ONCE_PERIOD."""
+def _period_id(period="day") -> str:
+    """Period identifier: 'day' -> ISO date, 'week' -> ISO year-week."""
     today = datetime.date.today()
-    if os.getenv("RUN_ONCE_PERIOD", "day").lower() == "week":
+    if (period or "day").lower() == "week":
         y, w, _ = today.isocalendar()
         return f"{y}-W{w:02d}"
     return today.isoformat()
 
 
-def _guard_path():
-    """State file for the active RUN_ONCE_KEY, or None if guarding is disabled."""
-    key = os.getenv("RUN_ONCE_KEY")
-    return (_STATE_DIR / f"{key}.txt") if key else None
-
-
-def already_succeeded() -> bool:
-    """True if this key has already succeeded for the current period."""
-    path = _guard_path()
-    if path is None:
+def already_succeeded(key, period="day") -> bool:
+    """True if `key` already succeeded for the current period. key falsy -> False."""
+    if not key:
         return False
     try:
-        return path.read_text().strip() == _period_id()
+        return (_STATE_DIR / f"{key}.txt").read_text().strip() == _period_id(period)
     except FileNotFoundError:
         return False
 
 
-def mark_succeeded() -> None:
-    """Record a successful run for the current period (no-op if guard disabled)."""
-    path = _guard_path()
-    if path is None:
+def mark_succeeded(key, period="day") -> None:
+    """Record a successful run for the current period (no-op if key is falsy)."""
+    if not key:
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_period_id())
+    _STATE_DIR.mkdir(parents=True, exist_ok=True)
+    (_STATE_DIR / f"{key}.txt").write_text(_period_id(period))
 
 
 # --------------------------------------------------------------------------
@@ -105,13 +93,13 @@ def mark_succeeded() -> None:
 #
 # Default: today (the run date). But a WEEKLY report whose retry may not land
 # until Saturday must still stamp the FRIDAY it belongs to, or Zoho's
-# Friday-ending weekly pivots break. Set REPORT_DATE_ANCHOR to a weekday name
-# (e.g. "friday") and the report date snaps back to the most recent occurrence
-# of that weekday on-or-before today:
+# Friday-ending weekly pivots break. The --friday flag (see parse_run_args)
+# passes anchor='friday' and the report date snaps back to the most recent
+# occurrence of that weekday on-or-before today:
 #     Fri run   -> that Friday
 #     Sat retry -> the day before (that same Friday)
 #     Sun retry -> still that Friday
-# Leave REPORT_DATE_ANCHOR unset for daily runs (stamps today, as before).
+# anchor=None (daily runs) stamps today, as before.
 # --------------------------------------------------------------------------
 _WEEKDAYS = {
     "monday": 0, "mon": 0, "tuesday": 1, "tue": 1, "wednesday": 2, "wed": 2,
@@ -120,12 +108,12 @@ _WEEKDAYS = {
 }
 
 
-def resolve_report_date():
-    """Date to stamp as DATE_PROD and use in the filename (see note above)."""
+def resolve_report_date(anchor=None):
+    """Date to stamp as DATE_PROD and use in the filename. anchor=None -> today;
+    a weekday name (e.g. 'friday') -> most recent that-weekday on-or-before today."""
     today = datetime.date.today()
-    anchor = os.getenv("REPORT_DATE_ANCHOR")
     if anchor:
-        target = _WEEKDAYS.get(anchor.strip().lower())
+        target = _WEEKDAYS.get(str(anchor).strip().lower())
         if target is not None:
             days_back = (today.weekday() - target) % 7
             return today - datetime.timedelta(days=days_back)
@@ -162,9 +150,9 @@ def report_source() -> str:
     return h
 
 
-def run_period_id() -> str:
+def run_period_id(period="day") -> str:
     """Public accessor for the current guard period id (used in SKIP log lines)."""
-    return _period_id()
+    return _period_id(period)
 
 
 def _log_timestamp() -> str:
@@ -205,8 +193,39 @@ def log_error(report: str) -> None:
         pass  # logging must never crash a run
 
 
+# --------------------------------------------------------------------------
+# Shared CLI for both report runners
+#
+# Flags are the primary interface (portable across cron / systemd / Task
+# Scheduler — no inline env-var syntax that varies by platform). Each flag
+# falls back to its legacy env var when absent, so existing env-var-based
+# schedules keep working during the transition to flags.
+# --------------------------------------------------------------------------
+def parse_run_args(argv=None):
+    import argparse
+    p = argparse.ArgumentParser(description="Energy Domain report runner")
+    p.add_argument("--email", action="store_true",
+                   help="also email the report (default: write file only)")
+    p.add_argument("--friday", action="store_true",
+                   help="stamp DATE_PROD (and the permits window) to the most recent "
+                        "Friday — for weekly reports whose retry may slip to Saturday")
+    p.add_argument("--once", metavar="KEY", default=None,
+                   help="retry-until-success guard state key (e.g. rigs_daily, "
+                        "rigs_weekly); omit to always run")
+    p.add_argument("--period", choices=["day", "week"], default=None,
+                   help="guard period for --once (default: day)")
+    p.add_argument("--to", metavar="EMAILS", default=None,
+                   help="override recipients, comma-separated (default: RIGS_EMAIL_TO from .env)")
+    args = p.parse_args(argv)
+    # Flag-first, env-fallback (keeps legacy env-var schedules working):
+    args.anchor = "friday" if args.friday else os.getenv("REPORT_DATE_ANCHOR")
+    args.once = args.once or os.getenv("RUN_ONCE_KEY")
+    args.period = args.period or os.getenv("RUN_ONCE_PERIOD") or "day"
+    return args
+
+
 __all__ = [
     "get_connection", "connect", "fetch_frame",
     "already_succeeded", "mark_succeeded", "resolve_report_date",
-    "report_source", "run_period_id", "log_run", "log_error",
+    "report_source", "run_period_id", "log_run", "log_error", "parse_run_args",
 ]

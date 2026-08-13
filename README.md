@@ -73,49 +73,57 @@ maintenance); a single scheduled run that lands during one fails with
 the code skip once it has already succeeded, so a failed 06:00 run just retries
 at 07:00… until one goes through.
 
-Opt in with two environment variables on the cron/task line:
+Control it with **command-line flags** (portable across cron / systemd / Task
+Scheduler — no per-platform inline env-var syntax):
 
-| Variable | Meaning |
+| Flag | Meaning |
 |---|---|
-| `RUN_ONCE_KEY` | state-file name (e.g. `rigs_daily`); omit to disable the guard |
-| `RUN_ONCE_PERIOD` | `day` (default) or `week` — what "already done" resets on |
-| `REPORT_DATE_ANCHOR` | weekday name (e.g. `friday`) to pin `DATE_PROD` — see below |
+| `--email` | also email the report (else write the file only) |
+| `--once <key>` | retry-guard state-file name (e.g. `rigs_daily`); omit to disable the guard |
+| `--period day\|week` | what "already done" resets on (default `day`) |
+| `--friday` | pin `DATE_PROD` (+ permits window) to the most recent Friday — see below |
+| `--to <emails>` | override recipients (comma-separated); default is `RIGS_EMAIL_TO` from `.env` |
+
+*(Each flag still falls back to its legacy env var — `RUN_ONCE_KEY`,
+`RUN_ONCE_PERIOD`, `REPORT_DATE_ANCHOR`, `RIGS_EMAIL_TO` — when absent, so older
+env-var-based schedules keep working during the transition.)*
 
 **Pinning `DATE_PROD` for weekly reports.** `DATE_PROD` (and the filename)
 default to the run date. But a weekly report whose Friday run only succeeds on a
 Saturday retry must still be stamped **Friday**, or Zoho's Friday-ending weekly
-pivots break. Set `REPORT_DATE_ANCHOR=friday` and the report date snaps to the
-most recent Friday on-or-before the run date (Fri run → that Friday; Sat/Sun
-retry → still that Friday). Omit it for daily runs (stamps today).
+pivots break. Pass `--friday` and the report date snaps to the most recent Friday
+on-or-before the run date (Fri run → that Friday; Sat/Sun retry → still that
+Friday). Omit it for daily runs (stamps today).
 
 On success the script writes `data/state/<key>.txt` with the current period id;
 subsequent hourly runs in the same period exit immediately as a no-op. If the
 run fails (vendor 503, email error), nothing is written, so the next hour tries
-again. State is per-box (`data/` is gitignored); with `RUN_ONCE_KEY` unset the
-scripts always run, so manual runs and single-shot schedules are unchanged.
+again. State is per-box (`data/` is gitignored); without `--once` the scripts
+always run, so manual runs and single-shot schedules are unchanged.
 
 Example prod-2 crontab (daily rigs, retry hourly 06:00–22:00 MT until it sends):
 
 ```cron
-0 6-22 * * * RIGS_EMAIL_TO=tad.jones@columbineco.com \
-  RUN_ONCE_KEY=rigs_daily RUN_ONCE_PERIOD=day \
-  /root/energy-domain/run.sh rigs_ed.py --email \
-  >> /root/energy-domain/cron_rigs_daily.log 2>&1
+0 6-22 * * * /root/energy-domain/run.sh rigs_ed.py --email --once rigs_daily --period day \
+  --to tad.jones@columbineco.com >> /root/energy-domain/cron_rigs_daily.log 2>&1
 ```
 
-Weekly rigs+permits (Fri 6 PM, retry hourly through Sat/Sun, `DATE_PROD` pinned
+Weekly rigs+permits (Fri 6 PM, retry hourly through Saturday, `DATE_PROD` pinned
 to Friday, sent once thanks to the `week` guard):
 
 ```cron
-# Friday evening + all Saturday + Sunday morning — guard sends only the first success
-0 18-23 * * 5 RUN_ONCE_KEY=rigs_weekly RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh rigs_ed.py    --email >> /root/energy-domain/cron_rigs.log 2>&1
-0 0-23  * * 6 RUN_ONCE_KEY=rigs_weekly RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh rigs_ed.py    --email >> /root/energy-domain/cron_rigs.log 2>&1
-0 18-23 * * 5 RUN_ONCE_KEY=permits_weekly RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh permits_ed.py --email >> /root/energy-domain/cron_permits.log 2>&1
-0 0-23  * * 6 RUN_ONCE_KEY=permits_weekly RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh permits_ed.py --email >> /root/energy-domain/cron_permits.log 2>&1
+# Friday evening + all Saturday — guard sends only the first success
+0 18-23 * * 5 /root/energy-domain/run.sh rigs_ed.py    --email --friday --once rigs_weekly    --period week >> /root/energy-domain/cron_rigs.log 2>&1
+0 0-23  * * 6 /root/energy-domain/run.sh rigs_ed.py    --email --friday --once rigs_weekly    --period week >> /root/energy-domain/cron_rigs.log 2>&1
+0 18-23 * * 5 /root/energy-domain/run.sh permits_ed.py --email --friday --once permits_weekly --period week >> /root/energy-domain/cron_permits.log 2>&1
+0 0-23  * * 6 /root/energy-domain/run.sh permits_ed.py --email --friday --once permits_weekly --period week >> /root/energy-domain/cron_permits.log 2>&1
 ```
 
-(Sat/Sun are the same ISO week as Fri, so the `week` guard treats them as one
-period — keep the retry window inside Fri–Sun so guard and anchor stay aligned.)
+(Sat is the same ISO week as Fri, so the `week` guard treats them as one period —
+keep the retry window inside Fri–Sun so guard and `--friday` stay aligned.)
+
+The version-controlled prod-2 schedule lives at `deploy/prod2.crontab`; spark's
+equivalent is the systemd units in `systemd/` (flags in `ExecStart`).
 
 ## Run logging
 

@@ -46,7 +46,7 @@ from pathlib import Path
 
 from ed_client import (
     get_connection, already_succeeded, mark_succeeded, resolve_report_date,
-    report_source, run_period_id, log_run, log_error,
+    report_source, run_period_id, log_run, log_error, parse_run_args,
 )
 
 DELIM = "|"
@@ -192,9 +192,9 @@ def _summary(total, records, as_of):
     return "\n".join(lines)
 
 
-def build_report():
+def build_report(anchor=None):
     OUT_DIR.mkdir(exist_ok=True)
-    report_date = resolve_report_date()   # today, or pinned weekday (REPORT_DATE_ANCHOR)
+    report_date = resolve_report_date(anchor)   # today, or pinned weekday (--friday)
     dateprod = report_date.strftime("%m/%d/%Y")
     out_path = OUT_DIR / f"Permits_ED_{report_date.strftime('%Y-%m-%d')}.txt"
 
@@ -252,8 +252,9 @@ def build_report():
     return out_path, n, _summary(n, records, report_date)
 
 
-def email_report(path, body=""):
-    """Opt-in email delivery. Creds + recipients from .env."""
+def email_report(path, body="", to=None, report_date=None):
+    """Opt-in email delivery. Recipients: --to override, else RIGS_EMAIL_TO from
+    .env. Subject date follows the report date (--friday-aware)."""
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
@@ -262,11 +263,13 @@ def email_report(path, body=""):
 
     sender = os.getenv("GMAIL_USER")
     app_pw = os.getenv("GMAIL_APP_PW")
-    recips = [x.strip() for x in os.getenv("RIGS_EMAIL_TO", "").split(",") if x.strip()]
+    recips_src = to if to else os.getenv("RIGS_EMAIL_TO", "")
+    recips = [x.strip() for x in recips_src.split(",") if x.strip()]
     if not (sender and app_pw and recips):
-        raise RuntimeError("Set GMAIL_USER, GMAIL_APP_PW, RIGS_EMAIL_TO in .env to email.")
+        raise RuntimeError("Set GMAIL_USER, GMAIL_APP_PW, and recipients "
+                           "(--to or RIGS_EMAIL_TO in .env) to email.")
 
-    dateprod = datetime.date.today().strftime("%m/%d/%Y")
+    dateprod = (report_date or datetime.date.today()).strftime("%m/%d/%Y")
     msg = MIMEMultipart()
     msg["From"] = sender
     msg["To"] = ", ".join(recips)
@@ -296,33 +299,33 @@ def email_report(path, body=""):
 
 
 def main():
-    import sys, time
-    if already_succeeded():
-        print(f"[{os.getenv('RUN_ONCE_KEY')}] already succeeded this period "
-              f"— skipping (nothing to do).")
-        log_run("permits", "SKIP", f"already succeeded {run_period_id()}")
+    import time
+    args = parse_run_args()
+    if already_succeeded(args.once, args.period):
+        print(f"[{args.once}] already succeeded this period — skipping (nothing to do).")
+        log_run("permits", "SKIP", f"already succeeded {run_period_id(args.period)}")
         return
+    report_date = resolve_report_date(args.anchor)
     t0 = time.monotonic()
     try:
-        out_path, n, summary = build_report()
+        out_path, n, summary = build_report(args.anchor)
         print(f"Wrote {n} rows -> {out_path}  ({out_path.stat().st_size:,} bytes)")
         print(f"  window: permit_date last {WINDOW_START_DAYS_AGO} days "
               f"({WINDOW_START_DAYS_AGO}-{WINDOW_END_DAYS_AGO} days ago)")
         print(summary)
-        emailed = "--email" in sys.argv
-        if emailed:
-            email_report(out_path, summary)
+        if args.email:
+            email_report(out_path, summary, to=args.to, report_date=report_date)
             print("Email sent.")
         else:
             print("(file only — run  ./permits_ed.py --email  to also send it)")
-        mark_succeeded()  # only reached if the run (incl. email) fully succeeded
+        mark_succeeded(args.once, args.period)  # only after full success (incl. email)
     except Exception as e:
         log_run("permits", "FAIL", f"{type(e).__name__}: {e}", time.monotonic() - t0)
         log_error("permits")   # full traceback -> data/logs/permits.errors.log
         raise
     log_run("permits", "OK",
-            f"rows={n} date_prod={resolve_report_date():%m/%d/%Y} "
-            f"email={'sent' if emailed else 'no'}", time.monotonic() - t0)
+            f"rows={n} date_prod={report_date:%m/%d/%Y} "
+            f"email={'sent' if args.email else 'no'}", time.monotonic() - t0)
 
 
 if __name__ == "__main__":

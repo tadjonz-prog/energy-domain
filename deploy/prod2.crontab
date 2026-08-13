@@ -14,19 +14,23 @@
 #
 # Schedule semantics:
 #   * Weekly rigs+permits -> tad.jones + zoho, Fridays 6:00 PM MT. Retries hourly
-#     Fri evening + all Saturday if the Energy Domain API 503s. The `week` guard
-#     sends only the first success; DATE_PROD and the permits 42-day window are
-#     pinned to the Friday (REPORT_DATE_ANCHOR=friday), so a Saturday retry still
-#     produces the Friday-dated report Zoho's weekly pivots expect.
-#   * TEMP daily rigs -> tad.jones only, hourly 06:00-22:00 MT. The `day` guard
-#     sends once/day. Remove when the daily personal copy is no longer wanted.
+#     Fri evening + all Saturday if the Energy Domain API 503s. --once (week
+#     period) sends only the first success; --friday pins DATE_PROD and the
+#     permits 42-day window to the Friday, so a Saturday retry still produces the
+#     Friday-dated report Zoho's weekly pivots expect. Recipients come from
+#     RIGS_EMAIL_TO in .env (tad.jones + zoho).
+#   * TEMP daily rigs -> tad.jones only (--to override), hourly 06:00-22:00 MT.
+#     --once (day period) sends once/day. Remove when no longer wanted.
+#
+# All behavior is set via CLI flags (--email/--friday/--once/--period/--to) —
+# no inline env vars — so the lines are portable and self-documenting.
 # =============================================================================
 
 # Energy Domain reports (rigs + permits) -> tad.jones + zoho, Fridays 6:00 PM MT
-0 18-23 * * 5 RUN_ONCE_KEY=rigs_weekly    RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh rigs_ed.py    --email >> /root/energy-domain/cron_rigs.log 2>&1
-0 0-23  * * 6 RUN_ONCE_KEY=rigs_weekly    RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh rigs_ed.py    --email >> /root/energy-domain/cron_rigs.log 2>&1
-0 18-23 * * 5 RUN_ONCE_KEY=permits_weekly RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh permits_ed.py --email >> /root/energy-domain/cron_permits.log 2>&1
-0 0-23  * * 6 RUN_ONCE_KEY=permits_weekly RUN_ONCE_PERIOD=week REPORT_DATE_ANCHOR=friday /root/energy-domain/run.sh permits_ed.py --email >> /root/energy-domain/cron_permits.log 2>&1
+0 18-23 * * 5 /root/energy-domain/run.sh rigs_ed.py    --email --friday --once rigs_weekly    --period week >> /root/energy-domain/cron_rigs.log 2>&1
+0 0-23  * * 6 /root/energy-domain/run.sh rigs_ed.py    --email --friday --once rigs_weekly    --period week >> /root/energy-domain/cron_rigs.log 2>&1
+0 18-23 * * 5 /root/energy-domain/run.sh permits_ed.py --email --friday --once permits_weekly --period week >> /root/energy-domain/cron_permits.log 2>&1
+0 0-23  * * 6 /root/energy-domain/run.sh permits_ed.py --email --friday --once permits_weekly --period week >> /root/energy-domain/cron_permits.log 2>&1
 
 # TEMP: daily personal rigs copy -> tad.jones only, 6:00 AM MT (remove later)
-0 6-22 * * * RIGS_EMAIL_TO=tad.jones@columbineco.com RUN_ONCE_KEY=rigs_daily RUN_ONCE_PERIOD=day /root/energy-domain/run.sh rigs_ed.py --email >> /root/energy-domain/cron_rigs_daily.log 2>&1
+0 6-22 * * * /root/energy-domain/run.sh rigs_ed.py --email --once rigs_daily --period day --to tad.jones@columbineco.com >> /root/energy-domain/cron_rigs_daily.log 2>&1
