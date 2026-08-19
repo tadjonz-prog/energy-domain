@@ -47,7 +47,7 @@ from pathlib import Path
 from ed_client import (
     get_connection, already_succeeded, mark_succeeded, resolve_report_date,
     report_source, run_period_id, log_run, log_error, parse_run_args,
-    once_period_warning, write_ready_manifest,
+    once_period_warning, write_ready_manifest, email_sent_note,
 )
 
 DELIM = "|"
@@ -297,6 +297,7 @@ def email_report(path, body="", to=None, report_date=None):
     s = smtplib.SMTP("smtp.gmail.com", 587)
     s.starttls(); s.login(sender, app_pw)
     s.sendmail(sender, recips, msg.as_string()); s.quit()
+    return recips
 
 
 def main():
@@ -312,6 +313,7 @@ def main():
         return
     report_date = resolve_report_date(args.anchor)
     t0 = time.monotonic()
+    email_note = "no"
     try:
         out_path, n, summary = build_report(args.anchor)
         print(f"Wrote {n} rows -> {out_path}  ({out_path.stat().st_size:,} bytes)")
@@ -319,8 +321,9 @@ def main():
               f"({WINDOW_START_DAYS_AGO}-{WINDOW_END_DAYS_AGO} days ago)")
         print(summary)
         if args.email:
-            email_report(out_path, summary, to=args.to, report_date=report_date)
+            recips = email_report(out_path, summary, to=args.to, report_date=report_date)
             print("Email sent.")
+            email_note = email_sent_note(recips)
         else:
             print("(file only — run  ./permits_ed.py --email  to also send it)")
         mark_succeeded(args.once, args.period)  # only after full success (incl. email)
@@ -331,8 +334,8 @@ def main():
         log_error("permits")   # full traceback -> data/logs/permits.errors.log
         raise
     log_run("permits", "OK",
-            f"rows={n} date_prod={report_date:%m/%d/%Y} "
-            f"email={'sent' if args.email else 'no'}", time.monotonic() - t0)
+            f"rows={n} date_prod={report_date:%m/%d/%Y} email={email_note}",
+            time.monotonic() - t0)
 
 
 if __name__ == "__main__":

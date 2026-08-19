@@ -170,6 +170,14 @@ def run_period_id(period="day") -> str:
     return _period_id(period)
 
 
+def email_sent_note(recips):
+    """Compact 'email=' log value confirming delivery + who to, e.g.
+    'sent(2: tad.jones,zoho-import)'. Uses local-parts (before @) to stay short
+    and keep the full address domain out of the log."""
+    locals_ = [r.split("@")[0] for r in recips]
+    return f"sent({len(locals_)}: {','.join(locals_)})"
+
+
 def _log_timestamp() -> str:
     try:
         from zoneinfo import ZoneInfo
@@ -295,5 +303,5 @@ __all__ = [
     "get_connection", "connect", "fetch_frame",
     "already_succeeded", "mark_succeeded", "resolve_report_date",
     "report_source", "run_period_id", "log_run", "log_error", "parse_run_args",
-    "once_period_warning", "write_ready_manifest",
+    "once_period_warning", "write_ready_manifest", "email_sent_note",
 ]
