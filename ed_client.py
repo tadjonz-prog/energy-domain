@@ -178,6 +178,33 @@ def email_sent_note(recips):
     return f"sent({len(locals_)}: {','.join(locals_)})"
 
 
+def send_email(subject, body, to=None):
+    """Generic plain-text notifier (no attachment) — for import/monitoring
+    notifications. Reuses GMAIL_USER/GMAIL_APP_PW from .env. Recipients from `to`
+    (a list or comma-separated string); defaults to RIGS_EMAIL_TO if `to` is
+    None. Returns the recipient list. Raises if creds/recipients are missing."""
+    import smtplib
+    from email.mime.text import MIMEText
+    sender = os.getenv("GMAIL_USER")
+    app_pw = os.getenv("GMAIL_APP_PW")
+    src = (",".join(to) if isinstance(to, (list, tuple)) else to) \
+        if to else os.getenv("RIGS_EMAIL_TO", "")
+    recips = [x.strip() for x in src.split(",") if x.strip()]
+    if not (sender and app_pw and recips):
+        raise RuntimeError("send_email needs GMAIL_USER, GMAIL_APP_PW, and recipients "
+                           "(the `to` arg or RIGS_EMAIL_TO in .env).")
+    msg = MIMEText(body + "\n", "plain")
+    msg["From"] = sender
+    msg["To"] = ", ".join(recips)
+    msg["Subject"] = subject
+    s = smtplib.SMTP("smtp.gmail.com", 587)
+    s.starttls()
+    s.login(sender, app_pw)
+    s.sendmail(sender, recips, msg.as_string())
+    s.quit()
+    return recips
+
+
 def _log_timestamp() -> str:
     try:
         from zoneinfo import ZoneInfo
@@ -303,5 +330,5 @@ __all__ = [
     "get_connection", "connect", "fetch_frame",
     "already_succeeded", "mark_succeeded", "resolve_report_date",
     "report_source", "run_period_id", "log_run", "log_error", "parse_run_args",
-    "once_period_warning", "write_ready_manifest", "email_sent_note",
+    "once_period_warning", "write_ready_manifest", "email_sent_note", "send_email",
 ]
