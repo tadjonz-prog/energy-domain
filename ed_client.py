@@ -248,12 +248,11 @@ def log_error(report: str) -> None:
 #
 # On FULL success (file written + email sent) a --import-ready run writes an
 # atomic JSON manifest to data/ready/<report>_<report_date>.json. Because it is
-# written last and via os.replace (atomic), the importer never sees a partial
-# file, and the manifest only appears once a good report exists — whether that
-# is Friday evening or a Saturday retry. report_date is the pinned Friday, so the
-# importer keys off Friday regardless of when the run actually succeeded. The
-# sha256 lets the importer verify the .txt is intact before ingesting.
-# See deploy/IMPORT.md for the full contract.
+# written last and via os.replace (atomic), it is never seen partially written,
+# and it only appears once a good report exists — whether that is Friday evening
+# or a Saturday retry. report_date is the pinned Friday. The sha256 lets a
+# consumer verify the .txt is intact.
+# See deploy/Rigs_Permits_Generator.md for the output spec.
 # --------------------------------------------------------------------------
 _READY_DIR = Path(__file__).with_name("data") / "ready"
 
@@ -317,7 +316,7 @@ def parse_run_args(argv=None):
                    help="override recipients, comma-separated (default: RIGS_EMAIL_TO from .env)")
     p.add_argument("--import-ready", action="store_true", dest="import_ready",
                    help="on full success, publish data/ready/<report>_<date>.json for "
-                        "the Zoho import process (see deploy/IMPORT.md)")
+                        "a consumer (see deploy/Rigs_Permits_Generator.md)")
     args = p.parse_args(argv)
     # Flag-first, env-fallback (keeps legacy env-var schedules working):
     args.anchor = "friday" if args.friday else os.getenv("REPORT_DATE_ANCHOR")

@@ -83,7 +83,7 @@ Scheduler — no per-platform inline env-var syntax):
 | `--period day\|week` | what "already done" resets on (default `day`) |
 | `--friday` | pin `DATE_PROD` (+ permits window) to the most recent Friday — see below |
 | `--to <emails>` | override recipients (comma-separated); default is `RIGS_EMAIL_TO` from `.env` |
-| `--import-ready` | on full success, publish `data/ready/<report>_<date>.json` for the Zoho import process (contract in `deploy/IMPORT.md`) |
+| `--import-ready` | on full success, publish `data/ready/<report>_<date>.json` (output spec in `deploy/Rigs_Permits_Generator.md`) |
 
 *(Each flag still falls back to its legacy env var — `RUN_ONCE_KEY`,
 `RUN_ONCE_PERIOD`, `REPORT_DATE_ANCHOR`, `RIGS_EMAIL_TO` — when absent, so older

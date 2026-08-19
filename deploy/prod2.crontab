@@ -27,7 +27,7 @@
 # =============================================================================
 
 # Energy Domain reports (rigs + permits) -> tad.jones + zoho, Fridays 6:00 PM MT
-# --import-ready publishes data/ready/<report>_<friday>.json on full success (see deploy/IMPORT.md)
+# --import-ready publishes data/ready/<report>_<friday>.json on full success (see deploy/Rigs_Permits_Generator.md)
 0 18-23 * * 5 /root/energy-domain/run.sh rigs_ed.py    --email --friday --once rigs_weekly    --period week --import-ready >> /root/energy-domain/cron_rigs.log 2>&1
 0 0-23  * * 6 /root/energy-domain/run.sh rigs_ed.py    --email --friday --once rigs_weekly    --period week --import-ready >> /root/energy-domain/cron_rigs.log 2>&1
 0 18-23 * * 5 /root/energy-domain/run.sh permits_ed.py --email --friday --once permits_weekly --period week --import-ready >> /root/energy-domain/cron_permits.log 2>&1
