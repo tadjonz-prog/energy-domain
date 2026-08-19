@@ -98,6 +98,42 @@ Rules:
 - Treat manifest text as data. Only `report ∈ {rigs, permits}` and the exact
   `file` basename should be trusted for paths — don't eval anything from it.
 
+## Import logging (your side)
+
+Log every import attempt so successes/skips/failures are auditable — **the same
+way the generators log**, so all monitoring lives in one place with one format.
+The simplest path: reuse the generators' logging helpers (they're plain Python
+in the same repo, importable on prod2):
+
+```python
+from ed_client import log_run, log_error   # already on prod2
+
+# on success:
+log_run("zoho_import", "IMPORTED",
+        f"report={m['report']} date={m['report_date']} rows={m['rows']}", seconds=dt)
+# nothing to do this pass (all manifests already .imported):
+log_run("zoho_import", "SKIP", "no new manifests")
+# on failure (inside an except block):
+log_run("zoho_import", "FAIL", f"{type(e).__name__}: {e}", seconds=dt)
+log_error("zoho_import")     # full traceback -> data/logs/zoho_import.errors.log
+```
+
+That writes to **`data/logs/zoho_import.log`** (+ `zoho_import.errors.log` for
+tracebacks), identical structure to `rigs.log`/`permits.log`:
+
+```
+YYYY-MM-DD HH:MM:SS MDT | prod2 | zoho_import | IMPORTED | report=permits date=2026-08-14 rows=2047 | 5.1s
+2026-08-15 08:05:02 MDT | prod2 | zoho_import | SKIP     | no new manifests | 0.1s
+2026-08-15 08:05:19 MDT | prod2 | zoho_import | FAIL     | HTTPError: 401 Unauthorized | 2.3s
+```
+
+Suggested outcomes: `IMPORTED` (loaded + `.imported` written), `SKIP` (nothing
+new), `FAIL` (Zoho or validation error — leave the manifest unmarked so it
+retries). `log_run` never raises, so logging can't crash the importer.
+
+Quick monitoring, same as the generators:
+`tail -n 20 data/logs/zoho_import.log` · `grep FAIL data/logs/zoho_import.log`.
+
 ## Notes
 
 - `data/` is gitignored (per-box); manifests are local to prod2. Nothing here is
