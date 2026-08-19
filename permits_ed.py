@@ -47,7 +47,7 @@ from pathlib import Path
 from ed_client import (
     get_connection, already_succeeded, mark_succeeded, resolve_report_date,
     report_source, run_period_id, log_run, log_error, parse_run_args,
-    once_period_warning,
+    once_period_warning, write_ready_manifest,
 )
 
 DELIM = "|"
@@ -324,6 +324,8 @@ def main():
         else:
             print("(file only — run  ./permits_ed.py --email  to also send it)")
         mark_succeeded(args.once, args.period)  # only after full success (incl. email)
+        if args.import_ready:
+            write_ready_manifest("permits", report_date, out_path, n, args.email)
     except Exception as e:
         log_run("permits", "FAIL", f"{type(e).__name__}: {e}", time.monotonic() - t0)
         log_error("permits")   # full traceback -> data/logs/permits.errors.log

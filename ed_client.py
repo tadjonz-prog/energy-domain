@@ -209,6 +209,55 @@ def log_error(report: str) -> None:
 
 
 # --------------------------------------------------------------------------
+# "Ready to import" signal (handshake to the Zoho Analytics import process)
+#
+# On FULL success (file written + email sent) a --import-ready run writes an
+# atomic JSON manifest to data/ready/<report>_<report_date>.json. Because it is
+# written last and via os.replace (atomic), the importer never sees a partial
+# file, and the manifest only appears once a good report exists — whether that
+# is Friday evening or a Saturday retry. report_date is the pinned Friday, so the
+# importer keys off Friday regardless of when the run actually succeeded. The
+# sha256 lets the importer verify the .txt is intact before ingesting.
+# See deploy/IMPORT.md for the full contract.
+# --------------------------------------------------------------------------
+_READY_DIR = Path(__file__).with_name("data") / "ready"
+
+
+def write_ready_manifest(report, report_date, file_path, rows, emailed) -> None:
+    """Atomically publish the 'ok to import' manifest for a completed report.
+    Never raises (signalling must not crash a run)."""
+    import json
+    import hashlib
+    try:
+        path = Path(file_path)
+        blob = path.read_bytes()
+        try:
+            from zoneinfo import ZoneInfo
+            now = datetime.datetime.now(ZoneInfo("America/Denver"))
+        except Exception:
+            now = datetime.datetime.now().astimezone()
+        manifest = {
+            "report": report,
+            "report_date": report_date.isoformat(),
+            "file": path.name,
+            "rows": rows,
+            "bytes": len(blob),
+            "sha256": hashlib.sha256(blob).hexdigest(),
+            "source": report_source(),
+            "emailed": bool(emailed),
+            "generated_at": now.isoformat(timespec="seconds"),
+            "status": "ready",
+        }
+        _READY_DIR.mkdir(parents=True, exist_ok=True)
+        out = _READY_DIR / f"{report}_{report_date.isoformat()}.json"
+        tmp = out.with_name(out.name + ".tmp")
+        tmp.write_text(json.dumps(manifest, indent=2) + "\n")
+        os.replace(tmp, out)   # atomic publish
+    except OSError:
+        pass
+
+
+# --------------------------------------------------------------------------
 # Shared CLI for both report runners
 #
 # Flags are the primary interface (portable across cron / systemd / Task
@@ -231,6 +280,9 @@ def parse_run_args(argv=None):
                    help="guard period for --once (default: day)")
     p.add_argument("--to", metavar="EMAILS", default=None,
                    help="override recipients, comma-separated (default: RIGS_EMAIL_TO from .env)")
+    p.add_argument("--import-ready", action="store_true", dest="import_ready",
+                   help="on full success, publish data/ready/<report>_<date>.json for "
+                        "the Zoho import process (see deploy/IMPORT.md)")
     args = p.parse_args(argv)
     # Flag-first, env-fallback (keeps legacy env-var schedules working):
     args.anchor = "friday" if args.friday else os.getenv("REPORT_DATE_ANCHOR")
@@ -243,5 +295,5 @@ __all__ = [
     "get_connection", "connect", "fetch_frame",
     "already_succeeded", "mark_succeeded", "resolve_report_date",
     "report_source", "run_period_id", "log_run", "log_error", "parse_run_args",
-    "once_period_warning",
+    "once_period_warning", "write_ready_manifest",
 ]

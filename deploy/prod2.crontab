@@ -27,10 +27,12 @@
 # =============================================================================
 
 # Energy Domain reports (rigs + permits) -> tad.jones + zoho, Fridays 6:00 PM MT
-0 18-23 * * 5 /root/energy-domain/run.sh rigs_ed.py    --email --friday --once rigs_weekly    --period week >> /root/energy-domain/cron_rigs.log 2>&1
-0 0-23  * * 6 /root/energy-domain/run.sh rigs_ed.py    --email --friday --once rigs_weekly    --period week >> /root/energy-domain/cron_rigs.log 2>&1
-0 18-23 * * 5 /root/energy-domain/run.sh permits_ed.py --email --friday --once permits_weekly --period week >> /root/energy-domain/cron_permits.log 2>&1
-0 0-23  * * 6 /root/energy-domain/run.sh permits_ed.py --email --friday --once permits_weekly --period week >> /root/energy-domain/cron_permits.log 2>&1
+# --import-ready publishes data/ready/<report>_<friday>.json on full success (see deploy/IMPORT.md)
+0 18-23 * * 5 /root/energy-domain/run.sh rigs_ed.py    --email --friday --once rigs_weekly    --period week --import-ready >> /root/energy-domain/cron_rigs.log 2>&1
+0 0-23  * * 6 /root/energy-domain/run.sh rigs_ed.py    --email --friday --once rigs_weekly    --period week --import-ready >> /root/energy-domain/cron_rigs.log 2>&1
+0 18-23 * * 5 /root/energy-domain/run.sh permits_ed.py --email --friday --once permits_weekly --period week --import-ready >> /root/energy-domain/cron_permits.log 2>&1
+0 0-23  * * 6 /root/energy-domain/run.sh permits_ed.py --email --friday --once permits_weekly --period week --import-ready >> /root/energy-domain/cron_permits.log 2>&1
 
 # TEMP: daily personal rigs copy -> tad.jones only, 6:00 AM MT (remove later)
+# no --import-ready: the daily copy is not imported into Zoho
 0 6-22 * * * /root/energy-domain/run.sh rigs_ed.py --email --once rigs_daily --period day --to tad.jones@columbineco.com >> /root/energy-domain/cron_rigs_daily.log 2>&1
