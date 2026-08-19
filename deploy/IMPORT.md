@@ -28,8 +28,13 @@ may exist. The importer must **not** key off the `.txt` appearing. Instead:
 | `/root/energy-domain/data/<file>` | the pipe-delimited report named in the manifest |
 | `/root/energy-domain/data/ready/<report>_<YYYY-MM-DD>.imported` | **you** write this after a successful import |
 
-`<report>` is `rigs` or `permits`. `<YYYY-MM-DD>` is the Friday. Example:
-`data/ready/permits_2026-08-14.json` → `data/Permits_ED_2026-08-14.txt`.
+`<report>` is `rigs` or `permits`. `<YYYY-MM-DD>` is the Friday. Both reports use
+the same `<Report>_ED_YYYY-MM-DD.txt` filename convention, e.g.:
+- `data/ready/permits_2026-08-14.json` → `data/Permits_ED_2026-08-14.txt`
+- `data/ready/rigs_2026-08-14.json` → `data/Rigs_ED_2026-08-14.txt`
+
+Always resolve the report file from the manifest's `file` field — never
+construct the name yourself.
 
 Only the **weekly** runs publish manifests (the cron lines carry `--import-ready`).
 The TEMP daily rigs copy does **not**, so you'll never see a daily manifest.
