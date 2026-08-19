@@ -14,7 +14,7 @@ Connection is the Python analog of the vendor's DBeaver/JDBC setup:
 | File | Purpose |
 |---|---|
 | `ed_client.py` | Connection helper — `get_connection()` + `fetch_frame`, creds from `.env` |
-| `rigs_ed.py` | Rigs report → `data/Rigs_ED_MM-DD-YYYY.txt` (52-col, active-rig wells) |
+| `rigs_ed.py` | Rigs report → `data/Rigs_ED_YYYY-MM-DD.txt` (52-col, active-rig wells) |
 | `permits_ed.py` | Permits report → `data/Permits_ED_YYYY-MM-DD.txt` (79-col, last-42-day / 6-week permit window) |
 | `rig_report.py` | Ad-hoc CSV/Parquet export of the rig join (exploration helper) |
 | `test_connection.py` | Connection smoke test |

@@ -9,7 +9,7 @@ into the same downstream (Zoho Reports) pipeline:
   * 52-column pipe-delimited header (identical to rigs.py)
   * data rows emitted at full 52-column width (OPER_STATE/OPER_ZIP as trailing
     empties) so every row matches the header
-  * filename  data/Rigs_ED_MM-DD-YYYY.txt  (ED_ prefix distinguishes it from the
+  * filename  data/Rigs_ED_YYYY-MM-DD.txt  (ED_ prefix distinguishes it from the
     parallel Enverus Rigs_MM-DD-YYYY.txt during the bake-off)
   * DATE_PROD = today as MM/DD/YYYY; DATE_APRV/DATE_SPUD reformatted to MM/DD/YYYY
   * optional email delivery (opt-in; creds from .env, never hard-coded)
@@ -136,7 +136,7 @@ def build_report(anchor=None):
     OUT_DIR.mkdir(exist_ok=True)
     report_date = resolve_report_date(anchor)   # today, or pinned weekday (--friday)
     dateprod = report_date.strftime("%m/%d/%Y")
-    out_path = OUT_DIR / f"Rigs_ED_{report_date.strftime('%m-%d-%Y')}.txt"
+    out_path = OUT_DIR / f"Rigs_ED_{report_date.strftime('%Y-%m-%d')}.txt"
 
     conn = get_connection()
     cur = conn.cursor()
