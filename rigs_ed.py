@@ -189,9 +189,10 @@ def build_report(anchor=None):
     return out_path, n, _summary(n, state_counts)
 
 
-def email_report(path, body="", to=None, report_date=None):
+def email_report(path, body="", to=None, report_date=None, subject_prefix=""):
     """Opt-in email delivery (rigs.py port). Recipients: --to override, else
-    RIGS_EMAIL_TO from .env. Subject date follows the report date (--friday-aware)."""
+    RIGS_EMAIL_TO from .env. Subject date follows the report date (--friday-aware).
+    subject_prefix lets a caller mark the mail (e.g. '[SANITY TEST] ')."""
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
@@ -210,7 +211,7 @@ def email_report(path, body="", to=None, report_date=None):
     msg = MIMEMultipart()
     msg["From"] = sender
     msg["To"] = ", ".join(recips)
-    msg["Subject"] = "Rigs Report - Energy Domain for " + dateprod + f" -{report_source()}"
+    msg["Subject"] = subject_prefix + "Rigs Report - Energy Domain for " + dateprod + f" -{report_source()}"
     if body:
         # Send the stats as BOTH plain text and an HTML <pre> block. Mail clients
         # render text/plain in a proportional font (columns misalign); the <pre>

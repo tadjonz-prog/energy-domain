@@ -18,6 +18,7 @@ Connection is the Python analog of the vendor's DBeaver/JDBC setup:
 | `permits_ed.py` | Permits report → `data/Permits_ED_YYYY-MM-DD.txt` (79-col, last-42-day / 6-week permit window) |
 | `rig_report.py` | Ad-hoc CSV/Parquet export of the rig join (exploration helper) |
 | `test_connection.py` | Connection smoke test |
+| `rigs_permits_ed_generate_sanity_check.py` | Ad-hoc preflight: verify cron + connection, build both reports, email a `[SANITY TEST]` copy + PASS/FAIL to the operator (never zoho, no guard/manifest) |
 | `requirements.txt` | Pinned deps (`pandas<3` — see note below) |
 | `.env.example` | Template for the gitignored `.env` |
 | `systemd/` | `--user` service + timer units (daily runs on the spark dev box) |
